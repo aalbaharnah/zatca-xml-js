@@ -34,6 +34,7 @@ export interface EGSUnitInfo {
     location: EGSUnitLocation,
 
     private_key?: string,
+    der_private_key?: string,
     csr?: string,
     compliance_certificate?: string,
     compliance_api_secret?: string,
@@ -170,8 +171,9 @@ export class EGS {
      */
     async generateNewKeysAndCSR(production: boolean, solution_name: string): Promise<any> {
         try {
-            const new_private_key = await generateSecp256k1KeyPair();
+            const [new_private_key, new_der_private_key] = await generateSecp256k1KeyPair();
             this.egs_info.private_key = new_private_key;
+            this.egs_info.der_private_key = new_der_private_key;
 
             const new_csr = await generateCSR(this.egs_info, production, solution_name);
             this.egs_info.csr = new_csr;
