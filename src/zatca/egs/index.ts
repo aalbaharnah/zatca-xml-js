@@ -8,7 +8,7 @@
 import { spawn } from "child_process";
 import { v4 as uuidv4 } from 'uuid';
 import fs from "fs";
-
+import { createPrivateKey } from 'crypto'
 import defaultCSRConfig from "../templates/csr_template";
 import API from "../api";
 import { ZATCASimplifiedTaxInvoice } from "../ZATCASimplifiedTaxInvoice";
@@ -47,7 +47,7 @@ const OpenSSL = (cmd: string[]): Promise<string> => {
             const command = spawn("openssl", cmd);
             let result = "";
             command.stdout.on("data", (data) => {
-                 result += data.toString();
+                result += data.toString();
             });
             command.on("close", (code: number) => {
                 return resolve(result);
@@ -61,16 +61,29 @@ const OpenSSL = (cmd: string[]): Promise<string> => {
     });
 }
 
+/**
+ * Convert a PEM private key to DER format.
+ * @param pemPrivateKey PEM private key
+ * @returns DER private key
+ */
+const pemToDer = (pemPrivateKey: string): string => {
+    const privateKey = createPrivateKey(pemPrivateKey);
+    const derPrivateKey = privateKey.export({ type: 'pkcs8', format: 'der' });
+    return Buffer.from(derPrivateKey).toString('base64');
+};
+
+
 // Generate a secp256k1 key pair
 // https://techdocs.akamai.com/iot-token-access-control/docs/generate-ecdsa-keys
 // openssl ecparam -name secp256k1 -genkey -noout -out ec-secp256k1-priv-key.pem
-const generateSecp256k1KeyPair = async (): Promise<string> => {
+const generateSecp256k1KeyPair = async (): Promise<[string, string]> => {
     try {
         const result = await OpenSSL(["ecparam", "-name", "secp256k1", "-genkey"]);
         if (!result.includes("-----BEGIN EC PRIVATE KEY-----")) throw new Error("Error no private key found in OpenSSL output.");
 
         let private_key: string = `-----BEGIN EC PRIVATE KEY-----${result.split("-----BEGIN EC PRIVATE KEY-----")[1]}`.trim();
-        return private_key;
+        const der_private_key = pemToDer(private_key);
+        return [private_key, der_private_key];
     } catch (error) {
         throw error;
     }
@@ -99,13 +112,13 @@ const generateCSR = async (egs_info: EGSUnitInfo, production: boolean, solution_
         taxpayer_provided_id: egs_info.custom_id,
         production: production
     }));
-    
+
     const cleanUp = () => {
         fs.unlink(private_key_file, ()=>{});
         fs.unlink(csr_config_file, ()=>{});
     };
-    
-    try {    
+
+    try {
         const result = await OpenSSL(["req", "-new", "-sha256", "-key", private_key_file, "-config", csr_config_file]);
         if (!result.includes("-----BEGIN CERTIFICATE REQUEST-----")) throw new Error("Error no CSR found in OpenSSL output.");
 
@@ -160,7 +173,7 @@ export class EGS {
             const new_private_key = await generateSecp256k1KeyPair();
             this.egs_info.private_key = new_private_key;
 
-            const new_csr = await generateCSR(this.egs_info, production, solution_name);    
+            const new_csr = await generateCSR(this.egs_info, production, solution_name);
             this.egs_info.csr = new_csr;
         } catch (error) {
             throw error;
@@ -188,13 +201,13 @@ export class EGS {
      * @param compliance_request_id String compliance request ID generated from compliance CSID request.
      * @returns Promise String request id on success, throws error on fail.
      */
-     async issueProductionCertificate(compliance_request_id: string): Promise<string> {
+    async issueProductionCertificate(compliance_request_id: string): Promise<string> {
         if(!this.egs_info.compliance_certificate || !this.egs_info.compliance_api_secret) throw new Error("EGS is missing a certificate/private key/api secret to request a production certificate.")
 
         const issued_data = await this.api.production(this.egs_info.compliance_certificate, this.egs_info.compliance_api_secret).issueCertificate(compliance_request_id);
         this.egs_info.production_certificate = issued_data.issued_certificate;
         this.egs_info.production_api_secret = issued_data.api_secret;
-        
+
         return issued_data.request_id;
     }
 
@@ -204,7 +217,7 @@ export class EGS {
      * @param invoice_hash String.
      * @returns Promise compliance data on success, throws error on fail.
      */
-     async checkInvoiceCompliance(signed_invoice_string: string, invoice_hash: string): Promise<any> {
+    async checkInvoiceCompliance(signed_invoice_string: string, invoice_hash: string): Promise<any> {
         if(!this.egs_info.compliance_certificate || !this.egs_info.compliance_api_secret) throw new Error("EGS is missing a certificate/private key/api secret to check the invoice compliance.")
 
         return await this.api.compliance(this.egs_info.compliance_certificate, this.egs_info.compliance_api_secret).checkInvoiceCompliance(
