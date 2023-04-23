@@ -72,16 +72,10 @@ const generateSecp256k1KeyPair = async (): Promise<[string, string]> => {
         if (!result.includes("-----BEGIN EC PRIVATE KEY-----")) throw new Error("Error no private key found in OpenSSL output.");
 
         // Extract the private key data from the result
-        const private_key_data = result.split("-----BEGIN EC PRIVATE KEY-----")[1].trim().replace(/\n/g, "");
+        const privateKeyData = result.split("-----BEGIN EC PRIVATE KEY-----")[1].split("-----END EC PRIVATE KEY-----")[0].trim().replace(/\n/g, "");
         let private_key: string = `-----BEGIN EC PRIVATE KEY-----${result.split("-----BEGIN EC PRIVATE KEY-----")[1]}`.trim();
 
-        // Convert the private key data to a Buffer
-        const private_key_buffer = Buffer.from(private_key_data, "hex");
-
-        // Encode the private key data in Base64
-        const privateKeyBase64 = private_key_buffer.toString("base64");
-
-        return [private_key, privateKeyBase64];
+        return [private_key, privateKeyData];
     } catch (error) {
         throw error;
     }
