@@ -34,7 +34,7 @@ export interface EGSUnitInfo {
     location: EGSUnitLocation,
 
     private_key?: string,
-    der_private_key?: string,
+    private_key_buffer?: string,
     csr?: string,
     compliance_certificate?: string,
     compliance_api_secret?: string,
@@ -88,9 +88,17 @@ const generateSecp256k1KeyPair = async (): Promise<[string, string]> => {
         const result = await OpenSSL(["ecparam", "-name", "secp256k1", "-genkey"]);
         if (!result.includes("-----BEGIN EC PRIVATE KEY-----")) throw new Error("Error no private key found in OpenSSL output.");
 
-        let private_key: string = `-----BEGIN EC PRIVATE KEY-----${result.split("-----BEGIN EC PRIVATE KEY-----")[1]}`.trim();
-        const der_private_key = await pemToDerBase64(private_key);
-        return [private_key, der_private_key];
+        // Extract the private key data from the result
+        const private_key_data = result.split("-----BEGIN EC PRIVATE KEY-----")[1].trim().replace(/\n/g, "");
+        const private_key: string = `-----BEGIN EC PRIVATE KEY-----${private_key_data}`.trim();
+
+        // Convert the private key data to a Buffer
+        const private_key_buffer = Buffer.from(private_key_data, "hex");
+
+        // Encode the private key data in Base64
+        const privateKeyBase64 = private_key_buffer.toString("base64");
+
+        return [private_key, privateKeyBase64];
     } catch (error) {
         throw error;
     }
@@ -177,9 +185,9 @@ export class EGS {
      */
     async generateNewKeysAndCSR(production: boolean, solution_name: string): Promise<any> {
         try {
-            const [new_private_key, new_der_private_key] = await generateSecp256k1KeyPair();
+            const [new_private_key, private_key_buffer] = await generateSecp256k1KeyPair();
             this.egs_info.private_key = new_private_key;
-            this.egs_info.der_private_key = new_der_private_key;
+            this.egs_info.private_key_buffer = private_key_buffer;
 
             const new_csr = await generateCSR(this.egs_info, production, solution_name);
             this.egs_info.csr = new_csr;
