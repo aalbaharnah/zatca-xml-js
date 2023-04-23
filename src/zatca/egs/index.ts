@@ -34,6 +34,7 @@ export interface EGSUnitInfo {
     location: EGSUnitLocation,
 
     private_key?: string,
+    private_key_buffer?: string,
     csr?: string,
     compliance_certificate?: string,
     compliance_api_secret?: string,
@@ -65,21 +66,22 @@ const OpenSSL = (cmd: string[]): Promise<string> => {
 // Generate a secp256k1 key pair
 // https://techdocs.akamai.com/iot-token-access-control/docs/generate-ecdsa-keys
 // openssl ecparam -name secp256k1 -genkey -noout -out ec-secp256k1-priv-key.pem
-const generateSecp256k1KeyPair = async (): Promise<string> => {
+const generateSecp256k1KeyPair = async (): Promise<[string, string]> => {
     try {
         const result = await OpenSSL(["ecparam", "-name", "secp256k1", "-genkey"]);
         if (!result.includes("-----BEGIN EC PRIVATE KEY-----")) throw new Error("Error no private key found in OpenSSL output.");
 
         // Extract the private key data from the result
-        const privateKeyData = result.split("-----BEGIN EC PRIVATE KEY-----")[1].trim().replace(/\n/g, "");
+        const private_key_data = result.split("-----BEGIN EC PRIVATE KEY-----")[1].trim().replace(/\n/g, "");
+        let private_key: string = `-----BEGIN EC PRIVATE KEY-----${result.split("-----BEGIN EC PRIVATE KEY-----")[1]}`.trim();
 
         // Convert the private key data to a Buffer
-        const privateKeyBuffer = Buffer.from(privateKeyData, "hex");
+        const private_key_buffer = Buffer.from(private_key_data, "hex");
 
         // Encode the private key data in Base64
-        const privateKeyBase64 = privateKeyBuffer.toString("base64");
+        const privateKeyBase64 = private_key_buffer.toString("base64");
 
-        return privateKeyBase64;
+        return [private_key, privateKeyBase64];
     } catch (error) {
         throw error;
     }
@@ -166,8 +168,9 @@ export class EGS {
      */
     async generateNewKeysAndCSR(production: boolean, solution_name: string): Promise<any> {
         try {
-            const new_private_key = await generateSecp256k1KeyPair();
+            const [new_private_key, private_key_buffer] = await generateSecp256k1KeyPair();
             this.egs_info.private_key = new_private_key;
+            this.egs_info.private_key_buffer = private_key_buffer;
 
             const new_csr = await generateCSR(this.egs_info, production, solution_name);
             this.egs_info.csr = new_csr;
