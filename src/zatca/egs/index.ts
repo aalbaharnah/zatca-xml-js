@@ -71,11 +71,10 @@ const generateSecp256k1KeyPair = async (): Promise<[string, string]> => {
         const result = await OpenSSL(["ecparam", "-name", "secp256k1", "-genkey"]);
         if (!result.includes("-----BEGIN EC PRIVATE KEY-----")) throw new Error("Error no private key found in OpenSSL output.");
 
-        // Extract the private key data from the result
-        const privateKeyData = result.split("-----BEGIN EC PRIVATE KEY-----")[1].split("-----END EC PRIVATE KEY-----")[0].trim().replace(/\n/g, "");
         let private_key: string = `-----BEGIN EC PRIVATE KEY-----${result.split("-----BEGIN EC PRIVATE KEY-----")[1]}`.trim();
+        let raw_private_key = await extractRawPrivateKey(private_key);
 
-        return [private_key, privateKeyData];
+        return [private_key, raw_private_key];
     } catch (error) {
         throw error;
     }
@@ -123,6 +122,42 @@ const generateCSR = async (egs_info: EGSUnitInfo, production: boolean, solution_
     }
 }
 
+
+async function extractRawPrivateKey(private_key: string) {
+    try {
+        const private_key_file = `${process.env.TEMP_FOLDER ?? "/tmp/"}${uuidv4()}.pem`;
+        const key_file = `${process.env.TEMP_FOLDER ?? "/tmp/"}${uuidv4()}.bin`;
+
+        fs.writeFileSync(private_key_file, private_key);
+
+        const cleanUp = () => {
+            fs.unlink(private_key_file, () => { });
+            fs.unlink(key_file, () => { });
+        };
+
+        await OpenSSL([
+            "ec",
+            "-inform",
+            "PEM",
+            "-outform",
+            "DER",
+            "-in",
+            private_key_file,
+            "-out",
+            key_file,
+        ]);
+
+        const buffer = fs.readFileSync(key_file);
+
+        const rawKeyOffset = 86; // offset to the raw private key
+        const rawKey = buffer.slice(rawKeyOffset, rawKeyOffset + 32);
+
+        cleanUp();
+        return Buffer.from(rawKey).toString("base64");
+    } catch (error) {
+        throw error;
+    }
+}
 
 
 
